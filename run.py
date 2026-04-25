@@ -6,28 +6,39 @@ Usage:
   python run.py encode <scan.json> [--dry-run]
   python run.py run    <folder> [--out scan.json] [--dry-run]
 
-  scan   : probe all video files in <folder>, write scan.json
-  encode : read an existing scan.json and transcode files marked "transcode"
+  scan   : probe all video files in <folder>, write results/<timestamp>_scan.json
+  encode : read an existing scan JSON and transcode files marked "transcode"
   run    : scan + encode in one step
 
 Options:
-  --out <path>   where to write/read the scan JSON  [default: scan_results.json]
+  --out <path>   override the default results/<timestamp>_scan.json path
   --dry-run      show what would be done, but do not encode anything
+
+Outputs:
+  logs/YYYY-MM-DD_HH-MM-SS.log   one log file per run
+  results/<timestamp>_scan.json  scan output (same timestamp as the log)
 """
 
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from scanner import VideoScanner
 from optimizer import SettingsOptimizer
 from transcoder import Transcoder
 
+BASE_DIR = Path(__file__).parent
+LOGS_DIR = BASE_DIR / "logs"
+RESULTS_DIR = BASE_DIR / "results"
+
 
 # ── logging ───────────────────────────────────────────────────────────────────
 
-def _setup_logging(log_file: str = "transcode.log") -> None:
+def _setup_logging(timestamp: str) -> None:
+    LOGS_DIR.mkdir(exist_ok=True)
+    log_file = LOGS_DIR / f"{timestamp}.log"
     fmt = "%(asctime)s %(levelname)-8s %(message)s"
     logging.basicConfig(
         level=logging.INFO,
@@ -37,14 +48,17 @@ def _setup_logging(log_file: str = "transcode.log") -> None:
             logging.StreamHandler(sys.stdout),
         ],
     )
+    logging.info(f"Log: {log_file}")
 
 
 # ── commands ──────────────────────────────────────────────────────────────────
 
 def cmd_scan(args: argparse.Namespace) -> None:
+    RESULTS_DIR.mkdir(exist_ok=True)
     scanner = VideoScanner()
     scanner.scan_folder(args.folder)
     scanner.save_json(args.out)
+    logging.info(f"Results: {args.out}")
 
 
 def cmd_encode(args: argparse.Namespace) -> None:
@@ -123,7 +137,10 @@ def cmd_run(args: argparse.Namespace) -> None:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    _setup_logging()
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    _setup_logging(timestamp)
+
+    default_json = RESULTS_DIR / f"{timestamp}_scan.json"
 
     parser = argparse.ArgumentParser(
         description="Batch HEVC transcoder using ffmpeg + AMD AMF",
@@ -134,20 +151,20 @@ def main() -> None:
     # scan
     p_scan = sub.add_parser("scan", help="Probe folder and write scan JSON")
     p_scan.add_argument("folder", type=Path, help="Folder to scan (recursive)")
-    p_scan.add_argument("--out", type=Path, default=Path("scan_results.json"),
-                        help="Output JSON path (default: scan_results.json)")
+    p_scan.add_argument("--out", type=Path, default=default_json,
+                        help=f"Output JSON path (default: results/<timestamp>_scan.json)")
 
     # encode
     p_enc = sub.add_parser("encode", help="Encode files listed in a scan JSON")
-    p_enc.add_argument("out", nargs="?", type=Path, default=Path("scan_results.json"),
-                       help="Scan JSON to read (default: scan_results.json)")
+    p_enc.add_argument("out", nargs="?", type=Path, default=default_json,
+                       help="Scan JSON to read (default: results/<timestamp>_scan.json)")
     p_enc.add_argument("--dry-run", action="store_true", help="Show plan only, do not encode")
 
     # run (scan + encode)
     p_run = sub.add_parser("run", help="Scan folder then encode in one step")
     p_run.add_argument("folder", type=Path, help="Folder to scan and encode")
-    p_run.add_argument("--out", type=Path, default=Path("scan_results.json"),
-                       help="Intermediate JSON path (default: scan_results.json)")
+    p_run.add_argument("--out", type=Path, default=default_json,
+                       help=f"Intermediate JSON path (default: results/<timestamp>_scan.json)")
     p_run.add_argument("--dry-run", action="store_true", help="Show plan only, do not encode")
 
     args = parser.parse_args()

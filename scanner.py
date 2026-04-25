@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 
 FFPROBE = "ffprobe"
 
-VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".flv", ".webm"}
+VIDEO_EXTENSIONS = {
+    '.mkv', '.mp4', '.avi', '.m4v', '.mov', '.webm', '.flv', '.ts', '.vob', '.ogv', '.ogg', '.rrc', '.gifv',
+    '.mng', '.qt', '.wmv', '.yuv', '.rm', '.asf', '.amv', '.m4p', '.mpg', '.mp2', '.mpeg', '.mpe', '.mpv',
+    '.svi', '.3gp', '.3g2', '.mxf', '.roq', '.nsv', '.f4v', '.f4p', '.f4a', '.f4b', '.mod'
+}
+
 
 # Thresholds above which re-encoding an already-x265 file is worthwhile
 _SIZE_LIMIT_GB = {"4k": 10.0, "1080p": 8.0, "720p": 4.0, "sd": 2.0}
