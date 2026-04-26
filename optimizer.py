@@ -39,8 +39,8 @@ _MKV_INCOMPATIBLE_SUBS = {"mov_text"}
 # CQP mode was tested and produced wildly inconsistent bitrates (77 Mbps!) — QVBR is stable.
 # Tested on 1080p Ozark dark scene: Q40 → ~900 kbps, Q45 → ~1.3 Mbps, Q51 → ~2 Mbps.
 # Adjust upward (+3) if quality looks soft; downward (-3) if files are too large.
-_QVBR_TRANSPARENT = 45   # x264/other → AV1 (transparent quality)
-_QVBR_EFFICIENT   = 38   # HEVC → AV1 re-encode (reclaim space)
+_QVBR_TRANSPARENT = 40   # x264/other → AV1 (transparent quality)
+_QVBR_EFFICIENT   = 33   # HEVC → AV1 re-encode (reclaim space)
 
 
 class SettingsOptimizer:
@@ -85,12 +85,17 @@ class SettingsOptimizer:
         # Preserve colour range (tv = limited 16-235, pc = full 0-255)
         color_range = video.get("color_range") or "tv"
 
+        # Cap output at source bitrate so we never produce a larger file.
+        # QVBR still drives quality — this only kicks in when the source is already compact.
+        source_bitrate_kbps = video.get("bitrate_kbps", 0)
+
         out = {
             "encoder": "av1_amf",
             "usage": "high_quality",      # AMD high quality transcoding mode
             "quality_preset": "quality",  # AMD quality/balanced/speed
             "rc": "qvbr",
             "qvbr_quality_level": qvbr,
+            "maxrate_kbps": source_bitrate_kbps,  # 0 = uncapped (unknown source bitrate)
             "bitdepth": 10 if use_10bit else 8,
             "preanalysis": True,          # works with AV1 AMF (unlike HEVC CQP)
             "aq_mode": "caq",             # context adaptive quantization — helps dark scenes

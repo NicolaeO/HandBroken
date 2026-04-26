@@ -36,10 +36,12 @@ class Transcoder:
 
     # ── public ────────────────────────────────────────────────────────────────
 
-    def transcode(self, settings: dict) -> bool:
+    def transcode(self, settings: dict, keep_larger: bool = False) -> bool:
         """
         Encode one file. Returns True on success (including the no-replace case
         where the output was larger than the input).
+
+        keep_larger: if True, skip the size guard and always replace the original.
         """
         src = Path(settings["path"])
         if not src.exists():
@@ -90,12 +92,18 @@ class Transcoder:
         ratio = out_bytes / in_bytes if in_bytes else 1
 
         if ratio > _MAX_SIZE_RATIO:
-            logger.warning(
-                f"  Output is {ratio:.0%} of input size — output larger than source, "
-                f"keeping original and discarding encode"
-            )
-            self._cleanup(temp_out)
-            return True  # Not an error; source is already optimal
+            if keep_larger:
+                logger.warning(
+                    f"  Output is {ratio:.0%} of input size — larger than source, "
+                    f"keeping anyway (--keep-larger)"
+                )
+            else:
+                logger.warning(
+                    f"  Output is {ratio:.0%} of input size — output larger than source, "
+                    f"keeping original and discarding encode"
+                )
+                self._cleanup(temp_out)
+                return True  # Not an error; source is already optimal
 
         # Replace original
         try:
@@ -157,6 +165,12 @@ class Transcoder:
             "-aq_mode",  vs.get("aq_mode", "none"),
         ]
 
+        # Cap at source bitrate — prevents output growing larger than input when
+        # the source is already compact. QVBR still drives quality freely below this cap.
+        if vs.get("maxrate_kbps", 0) > 0:
+            bufsize = vs["maxrate_kbps"] * 2
+            cmd += ["-maxrate", f"{vs['maxrate_kbps']}k", "-bufsize", f"{bufsize}k"]
+
         # Colour metadata — always set so the encoder tags the output correctly.
         # Without this, AV1 AMF defaults to unspecified and players render colours wrong.
         cmd += [
@@ -195,7 +209,8 @@ class Transcoder:
     def _log_plan(self, settings: dict, src: Path) -> None:
         vs = settings["video"]
         logger.info(f"  File   : {src.name}  ({settings['size_gb']:.2f} GB)")
-        logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QVBR {vs['qvbr_quality_level']}  rc={vs['rc']}")
+        maxrate_str = f"  maxrate={vs['maxrate_kbps']}k" if vs.get("maxrate_kbps", 0) > 0 else ""
+        logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QVBR {vs['qvbr_quality_level']}  rc={vs['rc']}{maxrate_str}")
         for t in settings["audio"]:
             logger.info(f"  Audio [{t['lang']}]: {t['reason']}")
         for t in settings["subtitles"]:

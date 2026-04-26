@@ -217,10 +217,13 @@ def cmd_encode(args: argparse.Namespace) -> None:
             f"{rec['size_gb']:.1f} GB  →  ~{rec['estimated_saving_gb']:.1f} GB saved"
         )
 
+    if getattr(args, "keep_larger", False):
+        logging.info("  --keep-larger: size guard disabled, encoded files kept even if larger than source")
+
     if args.dry_run:
         logging.info("\n[DRY RUN] No files encoded.")
         if args.clean:
-            logging.info("\n[DRY RUN] _ORIG_ cleanup that would follow:")
+            logging.info("\n[DRY RUN] .originals cleanup that would follow:")
             _clean_orig_files(all_records, dry_run=True)
         return
 
@@ -239,7 +242,7 @@ def cmd_encode(args: argparse.Namespace) -> None:
         logging.info("-" * 60)
 
         settings = optimizer.get_settings(rec)
-        ok = transcoder.transcode(settings)
+        ok = transcoder.transcode(settings, keep_larger=args.keep_larger)
 
         (success if ok else failed).append(name)
 
@@ -368,7 +371,9 @@ def main() -> None:
     # encode
     p_enc = sub.add_parser("encode", help="Pick a scan JSON and encode")
     p_enc.add_argument("--dry-run", action="store_true", help="Show plan only, do not encode")
-    p_enc.add_argument("--clean", action="store_true", help="Delete _ORIG_ files after encoding")
+    p_enc.add_argument("--clean", action="store_true", help="Delete .originals after encoding")
+    p_enc.add_argument("--keep-larger", action="store_true", dest="keep_larger",
+                       help="Keep encoded file even if it is larger than the source")
 
     # clean
     p_cln = sub.add_parser("clean", help="Delete originals from .originals/ after verifying encodes are good")
@@ -384,7 +389,9 @@ def main() -> None:
     p_run.add_argument("--out", type=Path, default=None,
                        help="Override scan JSON path (default: results/<timestamp>_<folder>.json)")
     p_run.add_argument("--dry-run", action="store_true", help="Show plan only, do not encode")
-    p_run.add_argument("--clean", action="store_true", help="Delete _ORIG_ files after encoding")
+    p_run.add_argument("--clean", action="store_true", help="Delete .originals after encoding")
+    p_run.add_argument("--keep-larger", action="store_true", dest="keep_larger",
+                       help="Keep encoded file even if it is larger than the source")
 
     args = parser.parse_args()
     args.timestamp = timestamp  # make available to cmd_scan

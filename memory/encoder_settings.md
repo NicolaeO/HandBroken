@@ -24,8 +24,8 @@ Scale is **HIGHER = better quality** (opposite of CRF). Range 1–51.
 
 | Scenario | qvbr_quality_level | Bitrate (dark 1080p scene) | Rationale |
 |---|---|---|---|
-| x264/other → AV1 | 45 | ~1.3 Mbps | Transparent quality, confirmed in MPV |
-| HEVC → AV1 re-encode | 38 | ~700 kbps | Reclaim space, still good quality |
+| x264/other → AV1 | 40 | ~900 kbps | Transparent quality, confirmed in MPV |
+| HEVC → AV1 re-encode | 33 | ~500 kbps | Reclaim space, still good quality |
 
 Calibrated on Ozark S01E01 dark scenes (worst case). Normal content will have higher bitrates.
 
