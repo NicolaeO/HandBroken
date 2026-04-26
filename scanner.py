@@ -134,7 +134,8 @@ class VideoScanner:
             f for f in folder.rglob("*")
             if f.is_file()
             and f.suffix.lower() in VIDEO_EXTENSIONS
-            and not f.name.startswith(("_ORIG_", "_TEMP_"))
+            and not f.name.startswith("_TEMP_")
+            and ".originals" not in f.parts
         )
 
         logger.info(f"Found {len(video_files)} video file(s) in {folder}")

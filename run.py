@@ -116,34 +116,37 @@ def _pick_scan_json() -> Path | None:
         return None
 
 
-def _find_orig_files(scan_records: list[dict]) -> list[Path]:
-    """Return all _ORIG_ files in the same folders as the scanned paths."""
+def _find_orig_folders(scan_records: list[dict]) -> list[Path]:
+    """Return all .originals folders that exist in the scanned paths' directories."""
     folders = {Path(r["path"]).parent for r in scan_records}
-    orig_files = []
-    for folder in sorted(folders):
-        orig_files.extend(sorted(folder.glob("_ORIG_*")))
-    return orig_files
+    return sorted(f / ".originals" for f in folders if (f / ".originals").is_dir())
 
 
 def _clean_orig_files(scan_records: list[dict], dry_run: bool = False) -> None:
-    orig_files = _find_orig_files(scan_records)
+    orig_dirs = _find_orig_folders(scan_records)
+
+    if not orig_dirs:
+        logging.info("No .originals folders found.")
+        return
+
+    orig_files = [f for d in orig_dirs for f in sorted(d.iterdir()) if f.is_file()]
 
     if not orig_files:
-        logging.info("No _ORIG_ files found.")
+        logging.info("No files found inside .originals folders.")
         return
 
     total_gb = sum(f.stat().st_size for f in orig_files) / 1024 ** 3
-    logging.info(f"Found {len(orig_files)} _ORIG_ file(s)  ({total_gb:.2f} GB)")
+    logging.info(f"Found {len(orig_files)} original(s) in {len(orig_dirs)} .originals folder(s)  ({total_gb:.2f} GB)")
     for f in orig_files:
         size_gb = f.stat().st_size / 1024 ** 3
-        logging.info(f"  {f.parent.name}/{f.name}  ({size_gb:.2f} GB)")
+        logging.info(f"  {f.parent.parent.name}/.originals/{f.name}  ({size_gb:.2f} GB)")
 
     if dry_run:
         logging.info("[DRY RUN] No files deleted.")
         return
 
     print()
-    confirm = input(f"Permanently delete {len(orig_files)} _ORIG_ file(s)? (yes/no): ").strip().lower()
+    confirm = input(f"Permanently delete {len(orig_files)} original(s)? (yes/no): ").strip().lower()
     if confirm != "yes":
         logging.info("Clean cancelled.")
         return
@@ -157,6 +160,15 @@ def _clean_orig_files(scan_records: list[dict], dry_run: bool = False) -> None:
         except Exception as e:
             logging.error(f"  Failed to delete {f.name}: {e}")
             errors += 1
+
+    # Remove now-empty .originals folders
+    for d in orig_dirs:
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+                logging.info(f"  Removed empty folder: {d}")
+        except Exception:
+            pass
 
     logging.info(f"Deleted {deleted} file(s), {errors} error(s)  (freed ~{total_gb:.2f} GB)")
 

@@ -3,7 +3,7 @@ Transcoder — runs ffmpeg on a single file using settings from SettingsOptimize
 
 Success flow:
   1. Encode source → _TEMP_<stem>.mkv in the same folder
-  2. Rename original → _ORIG_<original_filename>  (preserves original extension)
+  2. Move original → <same_folder>/.originals/<original_filename>
   3. Rename temp → <stem>.mkv
 
 Size guard: if output is > 110% of input size (edge case: already well-optimised
@@ -39,8 +39,9 @@ class Transcoder:
             logger.error(f"  Source not found: {src}")
             return False
 
-        temp_out = src.parent / f"_TEMP_{src.stem}.mkv"
-        orig_out = src.parent / f"_ORIG_{src.name}"
+        temp_out  = src.parent / f"_TEMP_{src.stem}.mkv"
+        orig_dir  = src.parent / ".originals"
+        orig_out  = orig_dir / src.name
 
         # Guard: if a previous failed run left a temp file, remove it
         if temp_out.exists():
@@ -81,13 +82,14 @@ class Transcoder:
 
         # Replace original
         try:
+            orig_dir.mkdir(exist_ok=True)
             src.rename(orig_out)
             final = src.parent / (src.stem + ".mkv")
             temp_out.rename(final)
             in_gb = in_bytes / 1024 ** 3
             out_gb = out_bytes / 1024 ** 3
             logger.info(f"  {in_gb:.2f} GB → {out_gb:.2f} GB ({ratio:.0%})  saved {in_gb - out_gb:.2f} GB")
-            logger.info(f"  Original kept as: {orig_out.name}")
+            logger.info(f"  Original → .originals/{src.name}")
         except Exception as e:
             logger.error(f"  Error replacing file: {e}")
             self._cleanup(temp_out)
