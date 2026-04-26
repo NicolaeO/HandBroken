@@ -144,13 +144,17 @@ class Transcoder:
         # not just the container — hardware decoders (AMD, Intel) read the bitstream,
         # not the container tags, so without this they default to unspecified and
         # render colours wrong (blue/dark tint).
-        color_range_filter = "limited" if vs["color_range"] == "tv" else vs["color_range"]
+        # Range is only set when the source explicitly declares it (or HDR, which is
+        # always limited). Forcing "tv" on an untagged source triggers a range
+        # conversion that crushes blacks and makes the output darker.
         setparams = (
             f"setparams=colorspace={vs['colorspace']}"
             f":color_primaries={vs['color_primaries']}"
             f":color_trc={vs['color_trc']}"
-            f":range={color_range_filter}"
         )
+        if vs.get("color_range"):
+            range_filter = "limited" if vs["color_range"] == "tv" else vs["color_range"]
+            setparams += f":range={range_filter}"
         cmd += ["-vf", setparams]
 
         # ── video ────────────────────────────────────────────────────────────
@@ -177,8 +181,9 @@ class Transcoder:
             "-color_primaries", vs["color_primaries"],
             "-color_trc",       vs["color_trc"],
             "-colorspace",      vs["colorspace"],
-            "-color_range",     vs["color_range"],
         ]
+        if vs.get("color_range"):
+            cmd += ["-color_range", vs["color_range"]]
 
         # ── audio ────────────────────────────────────────────────────────────
         cmd += ["-c:a", "copy"]   # default: copy everything

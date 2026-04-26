@@ -82,8 +82,14 @@ class SettingsOptimizer:
             trc        = video.get("color_transfer")  or "bt709"
             colorspace = video.get("color_space")     or "bt709"
 
-        # Preserve colour range (tv = limited 16-235, pc = full 0-255)
-        color_range = video.get("color_range") or "tv"
+        # Preserve colour range only when the source explicitly declares it.
+        # Defaulting to "tv" when the source is untagged causes ffmpeg to apply a
+        # full→limited range conversion that crushes blacks and makes the output darker.
+        # HDR is always limited range by spec; SDR only if ffprobe says so.
+        if hdr:
+            color_range = "tv"
+        else:
+            color_range = video.get("color_range") or None  # None = don't set
 
         # Cap output at source bitrate so we never produce a larger file.
         # QVBR still drives quality — this only kicks in when the source is already compact.
