@@ -3,7 +3,7 @@ SettingsOptimizer — translates a VideoScanner record into ffmpeg encoding sett
 
 Video: AMD hevc_amf, CQP mode.
   - x264/other → x265 : QP 20/22/24  (transparent quality)
-  - x265 re-encode     : QP 22/24/26  (slightly more aggressive to reclaim space)
+  - x265 re-encode    : QP 22/24/26  (slightly more aggressive to reclaim space)
   - 10-bit profile when source is 10-bit or HDR
 
 Audio (Option B):
@@ -77,8 +77,6 @@ class SettingsOptimizer:
             "qp_i": qp_i,
             "qp_p": qp_p,
             "qp_b": qp_b,
-            "preanalysis": True,
-            "vbaq": True,
         }
 
         # Pass through HDR colour metadata so the output is still HDR-tagged

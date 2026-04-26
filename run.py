@@ -23,6 +23,9 @@ Outputs:
 
 import argparse
 import logging
+import random
+import re
+import string
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +37,38 @@ from transcoder import Transcoder
 BASE_DIR = Path(__file__).parent
 LOGS_DIR = BASE_DIR / "logs"
 RESULTS_DIR = BASE_DIR / "results"
+
+
+# Folder names that are too generic to use alone (would collide across series/movies)
+_GENERIC_NAMES = {
+    "season", "specials", "extras", "bonus", "featurettes",
+    "movies", "films", "video", "videos", "media",
+    "downloads", "converted", "encode", "encoded",
+}
+_GENERIC_PATTERNS = [
+    re.compile(r"^season\s*\d+$", re.IGNORECASE),
+    re.compile(r"^s\d{1,2}$", re.IGNORECASE),
+    re.compile(r"^disc\s*\d+$", re.IGNORECASE),
+    re.compile(r"^part\s*\d+$", re.IGNORECASE),
+    re.compile(r"^vol(ume)?\s*\d+$", re.IGNORECASE),
+]
+
+
+def _scan_json_name(folder: Path, timestamp: str) -> Path:
+    """Build a results filename from the scanned folder name + timestamp."""
+    raw = folder.resolve().name
+    # Sanitize to filesystem-safe characters
+    safe = re.sub(r"[^\w\-]", "_", raw).strip("_") or "scan"
+
+    is_generic = (
+        raw.lower() in _GENERIC_NAMES
+        or any(p.match(raw) for p in _GENERIC_PATTERNS)
+    )
+    if is_generic:
+        rand = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        safe = f"{safe}_{rand}"
+
+    return RESULTS_DIR / f"{safe}.json"
 
 
 # ── logging ───────────────────────────────────────────────────────────────────
@@ -130,15 +165,17 @@ def _clean_orig_files(scan_records: list[dict], dry_run: bool = False) -> None:
 
 def cmd_scan(args: argparse.Namespace) -> None:
     RESULTS_DIR.mkdir(exist_ok=True)
+    out = args.out or _scan_json_name(args.folder, args.timestamp)
     scanner = VideoScanner()
     scanner.scan_folder(args.folder)
-    scanner.save_json(args.out)
-    logging.info(f"Results: {args.out}")
+    scanner.save_json(out)
+    logging.info(f"Results: {out}")
 
 
 def cmd_encode(args: argparse.Namespace) -> None:
     scan_path = _pick_scan_json()
     if scan_path is None:
+        logging.error("No scan JSON file selected.")
         return
 
     logging.info(f"Loading: {scan_path.name}")
@@ -231,8 +268,6 @@ def main() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     _setup_logging(timestamp)
 
-    default_json = RESULTS_DIR / f"{timestamp}_scan.json"
-
     parser = argparse.ArgumentParser(
         description="Batch HEVC transcoder using ffmpeg + AMD AMF",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -242,8 +277,8 @@ def main() -> None:
     # scan
     p_scan = sub.add_parser("scan", help="Probe folder and write scan JSON")
     p_scan.add_argument("folder", type=Path, help="Folder to scan (recursive)")
-    p_scan.add_argument("--out", type=Path, default=default_json,
-                        help="Output JSON path (default: results/<timestamp>_scan.json)")
+    p_scan.add_argument("--out", type=Path, default=None,
+                        help="Output JSON path (default: results/<timestamp>_<folder>.json)")
 
     # encode
     p_enc = sub.add_parser("encode", help="Pick a scan JSON and encode")
@@ -257,12 +292,13 @@ def main() -> None:
     # run (scan + encode)
     p_run = sub.add_parser("run", help="Scan folder then encode in one step")
     p_run.add_argument("folder", type=Path, help="Folder to scan and encode")
-    p_run.add_argument("--out", type=Path, default=default_json,
-                       help="Intermediate JSON path (default: results/<timestamp>_scan.json)")
+    p_run.add_argument("--out", type=Path, default=None,
+                       help="Override scan JSON path (default: results/<timestamp>_<folder>.json)")
     p_run.add_argument("--dry-run", action="store_true", help="Show plan only, do not encode")
     p_run.add_argument("--clean", action="store_true", help="Delete _ORIG_ files after encoding")
 
     args = parser.parse_args()
+    args.timestamp = timestamp  # make available to cmd_scan
 
     dispatch = {"scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "run": cmd_run}
     dispatch[args.command](args)

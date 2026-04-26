@@ -21,9 +21,15 @@ VIDEO_EXTENSIONS = {
 }
 
 
-# Thresholds above which re-encoding an already-x265 file is worthwhile
-_SIZE_LIMIT_GB = {"4k": 10.0, "1080p": 8.0, "720p": 4.0, "sd": 2.0}
-_BITRATE_LIMIT_KBPS = {"4k": 40_000, "1080p": 15_000, "720p": 8_000, "sd": 4_000}
+# Thresholds for re-encoding already-x265 files.
+# These are calibrated to x265 expectations, not x264.
+#
+# MB/min = size_gb * 1024 / duration_min  (most duration-aware signal)
+# bitrate = stream-level kbps             (catches high-quality encodes regardless of length)
+# size    = absolute ceiling              (catches very long or very large files)
+_SIZE_LIMIT_GB     = {"4k": 10.0, "1080p": 6.0,   "720p": 3.0,   "sd": 1.5  }
+_BITRATE_LIMIT_KBPS= {"4k": 12_000, "1080p": 3_500, "720p": 2_000, "sd": 1_200}
+_MB_PER_MIN_LIMIT  = {"4k": 100.0, "1080p": 30.0,  "720p": 15.0,  "sd": 8.0  }
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -182,14 +188,16 @@ class VideoScanner:
 
         size_gb = path.stat().st_size / (1024 ** 3)
         duration_min = float(fmt.get("duration", 0)) / 60
-        action = self._decide_action(video, size_gb)
+        mb_per_min = (size_gb * 1024 / duration_min) if duration_min > 0 else 0
+        action = self._decide_action(video, size_gb, duration_min)
         saving = _estimate_saving(size_gb, video["codec"], action)
 
         tier = video["resolution_tier"]
-        reason = self._action_reason(video, size_gb, action)
+        reason = self._action_reason(video, size_gb, mb_per_min, action)
 
         logger.info(f"    {video['codec'].upper()} {video['width']}x{video['height']} "
-                    f"{video['bitrate_kbps']} kbps  {size_gb:.2f} GB  → {action.upper()} ({reason})")
+                    f"{video['bitrate_kbps']} kbps  {size_gb:.2f} GB  {mb_per_min:.1f} MB/min"
+                    f"  → {action.upper()} ({reason})")
 
         return {
             "path": str(path),
@@ -203,20 +211,21 @@ class VideoScanner:
             "subtitle_tracks": [_parse_subtitle(s, i) for i, s in enumerate(subtitle_streams)],
         }
 
-    def _decide_action(self, video: dict, size_gb: float) -> str:
+    def _decide_action(self, video: dict, size_gb: float, duration_min: float) -> str:
         codec = video["codec"]
         tier = video["resolution_tier"]
         bitrate = video["bitrate_kbps"]
 
         if codec in ("hevc", "h265"):
-            over_size = size_gb > _SIZE_LIMIT_GB[tier]
-            # Only use bitrate threshold if we actually have a bitrate reading
-            over_bitrate = bitrate > 0 and bitrate > _BITRATE_LIMIT_KBPS[tier]
-            return "transcode" if (over_size or over_bitrate) else "skip"
-
+            mb_per_min = (size_gb * 1024 / duration_min) if duration_min > 0 else 0
+            over_size     = size_gb  > _SIZE_LIMIT_GB[tier]
+            over_bitrate  = bitrate  > 0 and bitrate > _BITRATE_LIMIT_KBPS[tier]
+            over_density  = mb_per_min > 0 and mb_per_min > _MB_PER_MIN_LIMIT[tier]
+            return "transcode" if (over_size or over_bitrate or over_density) else "skip"
+    
         return "transcode"
 
-    def _action_reason(self, video: dict, size_gb: float, action: str) -> str:
+    def _action_reason(self, video: dict, size_gb: float, mb_per_min: float, action: str) -> str:
         codec = video["codec"]
         tier = video["resolution_tier"]
         bitrate = video["bitrate_kbps"]
@@ -227,8 +236,10 @@ class VideoScanner:
             return f"{codec} → x265"
         if size_gb > _SIZE_LIMIT_GB[tier]:
             return f"x265 but {size_gb:.1f} GB > {_SIZE_LIMIT_GB[tier]} GB limit"
-        if bitrate > _BITRATE_LIMIT_KBPS[tier]:
+        if bitrate > 0 and bitrate > _BITRATE_LIMIT_KBPS[tier]:
             return f"x265 but {bitrate} kbps > {_BITRATE_LIMIT_KBPS[tier]} kbps limit"
+        if mb_per_min > _MB_PER_MIN_LIMIT[tier]:
+            return f"x265 but {mb_per_min:.1f} MB/min > {_MB_PER_MIN_LIMIT[tier]} MB/min limit"
         return "x265 re-encode"
 
     def _probe(self, path: Path) -> dict | None:

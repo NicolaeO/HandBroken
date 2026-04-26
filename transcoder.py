@@ -112,16 +112,15 @@ class Transcoder:
         cmd += ["-map", "0:t?"]                     # attachments (e.g. MKV fonts)
 
         # ── video ────────────────────────────────────────────────────────────
+        # Note: -preanalysis and -vbaq are not supported in CQP mode by AMD AMF
         cmd += [
-            "-c:v",        vs["encoder"],
-            "-profile:v",  vs["profile"],
-            "-quality",    vs["quality_preset"],
-            "-rc",         vs["rc"],
-            "-qp_i",       str(vs["qp_i"]),
-            "-qp_p",       str(vs["qp_p"]),
-            "-qp_b",       str(vs["qp_b"]),
-            "-preanalysis", "1" if vs.get("preanalysis") else "0",
-            "-vbaq",        "1" if vs.get("vbaq") else "0",
+            "-c:v",       vs["encoder"],
+            "-profile:v", vs["profile"],
+            "-quality",   vs["quality_preset"],
+            "-rc",        vs["rc"],
+            "-qp_i",      str(vs["qp_i"]),
+            "-qp_p",      str(vs["qp_p"]),
+            "-qp_b",      str(vs["qp_b"]),
         ]
 
         # HDR colour metadata passthrough
@@ -162,8 +161,7 @@ class Transcoder:
     def _log_plan(self, settings: dict, src: Path) -> None:
         vs = settings["video"]
         logger.info(f"  File   : {src.name}  ({settings['size_gb']:.2f} GB)")
-        logger.info(f"  Video  : {vs['encoder']} {vs['profile']}  "
-                    f"QP {vs['qp_i']}/{vs['qp_p']}/{vs['qp_b']}")
+        logger.info(f"  Video  : {vs['encoder']} {vs['profile']}  QP {vs['qp_i']}/{vs['qp_p']}/{vs['qp_b']}  rc={vs['rc']}")
         for t in settings["audio"]:
             logger.info(f"  Audio [{t['lang']}]: {t['reason']}")
         for t in settings["subtitles"]:
