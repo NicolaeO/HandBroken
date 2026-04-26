@@ -74,6 +74,7 @@ def _parse_video(s: dict) -> dict:
         "color_transfer": s.get("color_transfer", ""),
         "color_primaries": s.get("color_primaries", ""),
         "color_space": s.get("color_space", ""),
+        "color_range": s.get("color_range", ""),
         "bitrate_kbps": int(s.get("bit_rate", 0)) // 1000,
     }
 

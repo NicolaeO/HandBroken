@@ -1,6 +1,6 @@
 ---
 name: Encoder settings
-description: AMD AMF AV1 QP values, ffmpeg flags, and transcode decision thresholds
+description: AMD AMF AV1 QVBR quality levels, ffmpeg flags, and transcode decision thresholds
 type: project
 ---
 
@@ -10,26 +10,48 @@ Switched from hevc_amf to av1_amf. HEVC caused visible blocking in dark scenes;
 AV1 with -aq_mode caq fixes this. Speed: ~120fps (vs ~400fps for HEVC) — acceptable trade-off.
 
 ```
--c:v av1_amf -usage high_quality -quality quality -rc cqp
+-c:v av1_amf -usage high_quality -quality quality -rc qvbr -qvbr_quality_level <N>
 -preanalysis 1 -aq_mode caq
 ```
 
 **Note:** `-preanalysis` and `-vbaq` do NOT work with hevc_amf in CQP mode (encoder init fails).
-Both work correctly with av1_amf.
+Both work correctly with av1_amf. CQP mode was also tested on av1_amf and produced near-lossless
+output (77 Mbps for 1080p) — do not use CQP. QVBR is the correct rate control mode.
 
-### QP values
+### QVBR quality levels
 
-| Scenario | qp_i | qp_p | qp_b | Rationale |
-|---|---|---|---|---|
-| x264/other → AV1 | 20 | 24 | 28 | Transparent quality, confirmed working |
-| HEVC → AV1 re-encode | 24 | 28 | 32 | Reclaim space, still good quality |
+Scale is **HIGHER = better quality** (opposite of CRF). Range 1–51.
 
-**How to apply:** adjust `_QP_TRANSPARENT` / `_QP_EFFICIENT` tuples in `optimizer.py`.
-Bump up by 4 if files are too large; drop by 4 if artifacts appear.
+| Scenario | qvbr_quality_level | Bitrate (dark 1080p scene) | Rationale |
+|---|---|---|---|
+| x264/other → AV1 | 45 | ~1.3 Mbps | Transparent quality, confirmed in MPV |
+| HEVC → AV1 re-encode | 38 | ~700 kbps | Reclaim space, still good quality |
+
+Calibrated on Ozark S01E01 dark scenes (worst case). Normal content will have higher bitrates.
+
+Scale reference (dark 1080p Ozark scene):
+- Q40 → ~900 kbps, Q45 → ~1.3 Mbps, Q51 → ~2 Mbps
+
+**How to apply:** adjust `_QVBR_TRANSPARENT` / `_QVBR_EFFICIENT` in `optimizer.py`.
+Bump up by 3–5 if quality looks soft; down by 3–5 if files are too large.
 
 ### 10-bit / HDR
 - AV1 AMF uses `-bitdepth 10` (not `-profile:v main10` like HEVC AMF)
 - AV1 Main profile handles both 8-bit and 10-bit natively
+
+### Color metadata
+Use `-vf setparams=colorspace=...:color_primaries=...:color_trc=...:range=limited` PLUS
+the output flags `-color_primaries -color_trc -colorspace -color_range`.
+
+The `setparams` filter writes color info into the AV1 bitstream (sequence header OBU).
+Hardware decoders (AMD, Intel) read from the bitstream, not the container — without
+`setparams` they default to unspecified and render with wrong color (dark/blue shift).
+
+Confirmed: PotPlayer hardware AV1 decode had color issues fixed by setparams. MPV
+(software decode) always looked correct. Both look correct after the setparams fix.
+
+- SDR defaults: bt709 / bt709 / bt709 / limited
+- HDR defaults: bt2020 / smpte2084 / bt2020nc / limited
 
 ## Transcode decision thresholds
 

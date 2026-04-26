@@ -1,9 +1,9 @@
 """
 SettingsOptimizer — translates a VideoScanner record into ffmpeg encoding settings.
 
-Video: AMD av1_amf, CQP mode.
-  - x264/other → AV1 : QP 20/24/28  (transparent quality)
-  - HEVC re-encode    : QP 24/28/32  (slightly more aggressive to reclaim space)
+Video: AMD av1_amf, QVBR mode.
+  - x264/other → AV1 : QVBR quality 20  (transparent quality)
+  - HEVC re-encode    : QVBR quality 25  (slightly more aggressive to reclaim space)
   - 10-bit via -bitdepth 10 when source is 10-bit or HDR
   - pre-analysis and adaptive quantization enabled (supported by AV1 AMF unlike HEVC AMF)
 
@@ -34,11 +34,13 @@ _PASSTHROUGH_CODECS = {"ac3", "eac3", "aac", "mp3", "opus", "vorbis", "dts",
 # MKV cannot store mov_text subtitles — convert to srt
 _MKV_INCOMPATIBLE_SUBS = {"mov_text"}
 
-# AV1 AMF QP tuples: (qp_i, qp_p, qp_b)
-# AV1 is more efficient than HEVC so these are slightly higher than HEVC equivalents.
-# Start conservative — adjust upward if files are still too large.
-_QP_TRANSPARENT = (20, 24, 28)   # x264/other → AV1 (transparent quality)
-_QP_EFFICIENT   = (24, 28, 32)   # HEVC → AV1 re-encode (reclaim space)
+# AV1 AMF QVBR quality levels (1–51, HIGHER = better quality / more bits).
+# NOTE: scale is opposite to CRF — higher value = better quality, not lower.
+# CQP mode was tested and produced wildly inconsistent bitrates (77 Mbps!) — QVBR is stable.
+# Tested on 1080p Ozark dark scene: Q40 → ~900 kbps, Q45 → ~1.3 Mbps, Q51 → ~2 Mbps.
+# Adjust upward (+3) if quality looks soft; downward (-3) if files are too large.
+_QVBR_TRANSPARENT = 45   # x264/other → AV1 (transparent quality)
+_QVBR_EFFICIENT   = 38   # HEVC → AV1 re-encode (reclaim space)
 
 
 class SettingsOptimizer:
@@ -67,28 +69,36 @@ class SettingsOptimizer:
         hdr = video.get("hdr", False)
         use_10bit = bit_depth == 10 or hdr
 
-        qp_i, qp_p, qp_b = _QP_EFFICIENT if is_hevc_reencode else _QP_TRANSPARENT
+        qvbr = _QVBR_EFFICIENT if is_hevc_reencode else _QVBR_TRANSPARENT
+
+        # Always pass colour metadata — without it the encoder defaults to unspecified
+        # and players render colours incorrectly (wrong gamma / colour shift).
+        if hdr:
+            primaries  = video.get("color_primaries") or "bt2020"
+            trc        = video.get("color_transfer")  or "smpte2084"
+            colorspace = video.get("color_space")     or "bt2020nc"
+        else:
+            primaries  = video.get("color_primaries") or "bt709"
+            trc        = video.get("color_transfer")  or "bt709"
+            colorspace = video.get("color_space")     or "bt709"
+
+        # Preserve colour range (tv = limited 16-235, pc = full 0-255)
+        color_range = video.get("color_range") or "tv"
 
         out = {
             "encoder": "av1_amf",
             "usage": "high_quality",      # AMD high quality transcoding mode
             "quality_preset": "quality",  # AMD quality/balanced/speed
-            "rc": "cqp",
-            "qp_i": qp_i,
-            "qp_p": qp_p,
-            "qp_b": qp_b,
+            "rc": "qvbr",
+            "qvbr_quality_level": qvbr,
             "bitdepth": 10 if use_10bit else 8,
             "preanalysis": True,          # works with AV1 AMF (unlike HEVC CQP)
             "aq_mode": "caq",             # context adaptive quantization — helps dark scenes
+            "color_primaries": primaries,
+            "color_trc": trc,
+            "colorspace": colorspace,
+            "color_range": color_range,
         }
-
-        # Pass through HDR colour metadata
-        if hdr:
-            out["hdr_metadata"] = {
-                "color_primaries": video.get("color_primaries") or "bt2020",
-                "color_trc": video.get("color_transfer") or "smpte2084",
-                "colorspace": video.get("color_space") or "bt2020nc",
-            }
 
         return out
 

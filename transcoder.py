@@ -12,6 +12,7 @@ SD content), the temp file is deleted and the original is left untouched.
 
 import logging
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -21,6 +22,12 @@ FFMPEG = "ffmpeg"
 
 # If output exceeds input by this factor, abort replacement (keep original)
 _MAX_SIZE_RATIO = 1.10
+
+# Sanity check: if temp file exceeds this size after _SANITY_CHECK_AFTER seconds,
+# abort — encoder is likely running near-lossless due to bad QP settings.
+# Set relative to source size: abort if temp > source * this factor mid-encode.
+_SANITY_CHECK_AFTER_SEC = 120    # start checking after 2 minutes
+_SANITY_MAX_RATIO       = 2.0    # abort if temp is already 2x the source size
 
 
 class Transcoder:
@@ -51,9 +58,15 @@ class Transcoder:
         cmd = self._build_command(src, temp_out, settings)
         self._log_plan(settings, src)
 
+        in_bytes = src.stat().st_size
         start = time.time()
+        aborted = threading.Event()
+
         try:
-            result = subprocess.run(cmd)
+            proc = subprocess.Popen(cmd)
+            self._watch_size(proc, temp_out, in_bytes, aborted)
+            proc.wait()
+            result = proc
         except Exception as e:
             logger.error(f"  ffmpeg exception: {e}")
             self._cleanup(temp_out)
@@ -62,13 +75,17 @@ class Transcoder:
         elapsed = time.time() - start
         logger.info(f"  Encode time: {int(elapsed // 60)}m {int(elapsed % 60)}s")
 
+        if aborted.is_set():
+            logger.error("  Aborted: temp file grew beyond sanity limit — QP values likely too low")
+            self._cleanup(temp_out)
+            return False
+
         if result.returncode != 0:
             logger.error(f"  ffmpeg failed (exit {result.returncode})")
             self._cleanup(temp_out)
             return False
 
         # Size guard
-        in_bytes = src.stat().st_size
         out_bytes = temp_out.stat().st_size
         ratio = out_bytes / in_bytes if in_bytes else 1
 
@@ -113,28 +130,41 @@ class Transcoder:
         cmd += ["-map", "0:s?"]                     # all subtitle streams
         cmd += ["-map", "0:t?"]                     # attachments (e.g. MKV fonts)
 
+        # ── colour metadata filter ────────────────────────────────────────────
+        # setparams marks decoded frames with explicit colour info before encoding.
+        # This writes colour data into the AV1 bitstream (sequence header OBU),
+        # not just the container — hardware decoders (AMD, Intel) read the bitstream,
+        # not the container tags, so without this they default to unspecified and
+        # render colours wrong (blue/dark tint).
+        color_range_filter = "limited" if vs["color_range"] == "tv" else vs["color_range"]
+        setparams = (
+            f"setparams=colorspace={vs['colorspace']}"
+            f":color_primaries={vs['color_primaries']}"
+            f":color_trc={vs['color_trc']}"
+            f":range={color_range_filter}"
+        )
+        cmd += ["-vf", setparams]
+
         # ── video ────────────────────────────────────────────────────────────
         cmd += [
             "-c:v",      vs["encoder"],
             "-usage",    vs["usage"],
             "-quality",  vs["quality_preset"],
-            "-rc",       vs["rc"],
-            "-qp_i",     str(vs["qp_i"]),
-            "-qp_p",     str(vs["qp_p"]),
-            "-qp_b",     str(vs["qp_b"]),
+            "-rc",                   vs["rc"],
+            "-qvbr_quality_level",   str(vs["qvbr_quality_level"]),
             "-bitdepth", str(vs["bitdepth"]),
             "-preanalysis", "1" if vs.get("preanalysis") else "0",
             "-aq_mode",  vs.get("aq_mode", "none"),
         ]
 
-        # HDR colour metadata passthrough
-        hdr = vs.get("hdr_metadata")
-        if hdr:
-            cmd += [
-                "-color_primaries", hdr["color_primaries"],
-                "-color_trc",       hdr["color_trc"],
-                "-colorspace",      hdr["colorspace"],
-            ]
+        # Colour metadata — always set so the encoder tags the output correctly.
+        # Without this, AV1 AMF defaults to unspecified and players render colours wrong.
+        cmd += [
+            "-color_primaries", vs["color_primaries"],
+            "-color_trc",       vs["color_trc"],
+            "-colorspace",      vs["colorspace"],
+            "-color_range",     vs["color_range"],
+        ]
 
         # ── audio ────────────────────────────────────────────────────────────
         cmd += ["-c:a", "copy"]   # default: copy everything
@@ -165,12 +195,38 @@ class Transcoder:
     def _log_plan(self, settings: dict, src: Path) -> None:
         vs = settings["video"]
         logger.info(f"  File   : {src.name}  ({settings['size_gb']:.2f} GB)")
-        logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QP {vs['qp_i']}/{vs['qp_p']}/{vs['qp_b']}  rc={vs['rc']}")
+        logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QVBR {vs['qvbr_quality_level']}  rc={vs['rc']}")
         for t in settings["audio"]:
             logger.info(f"  Audio [{t['lang']}]: {t['reason']}")
         for t in settings["subtitles"]:
             if t["codec"] != "copy":
                 logger.info(f"  Sub   [{t['lang']}]: {t['reason']}")
+
+    def _watch_size(self, proc: subprocess.Popen, temp: Path,
+                    in_bytes: int, aborted: threading.Event) -> None:
+        """Background thread: kill ffmpeg if temp file exceeds sanity limit."""
+        def _run():
+            time.sleep(_SANITY_CHECK_AFTER_SEC)
+            while proc.poll() is None:
+                try:
+                    if temp.exists():
+                        temp_bytes = temp.stat().st_size
+                        if temp_bytes > in_bytes * _SANITY_MAX_RATIO:
+                            in_gb   = in_bytes  / 1024 ** 3
+                            temp_gb = temp_bytes / 1024 ** 3
+                            logger.error(
+                                f"  SANITY CHECK FAILED: temp is {temp_gb:.1f} GB "
+                                f"vs source {in_gb:.1f} GB — killing ffmpeg"
+                            )
+                            aborted.set()
+                            proc.kill()
+                            return
+                except FileNotFoundError:
+                    pass
+                time.sleep(30)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
     def _cleanup(self, path: Path) -> None:
         if path.exists():
