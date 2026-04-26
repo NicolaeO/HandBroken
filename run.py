@@ -269,6 +269,79 @@ def cmd_clean(args: argparse.Namespace) -> None:
     _clean_orig_files(all_records, dry_run=args.dry_run)
 
 
+def cmd_revert(args: argparse.Namespace) -> None:
+    scan_path = _pick_scan_json()
+    if scan_path is None:
+        return
+
+    logging.info(f"Loading: {scan_path.name}")
+    all_records = VideoScanner.load_json(scan_path)
+    orig_dirs = _find_orig_folders(all_records)
+
+    if not orig_dirs:
+        logging.info("No .originals folders found — nothing to revert.")
+        return
+
+    # Build (original, transcoded) pairs
+    pairs: list[tuple[Path, Path]] = []
+    for orig_dir in orig_dirs:
+        for orig_file in sorted(f for f in orig_dir.iterdir() if f.is_file()):
+            transcoded = orig_dir.parent / (orig_file.stem + ".mkv")
+            pairs.append((orig_file, transcoded))
+
+    if not pairs:
+        logging.info("No files to revert.")
+        return
+
+    logging.info(f"Files to revert: {len(pairs)}")
+    for orig_file, transcoded in pairs:
+        orig_gb = orig_file.stat().st_size / 1024 ** 3
+        trans_info = f"{transcoded.stat().st_size / 1024**3:.2f} GB" if transcoded.exists() else "not found"
+        logging.info(f"  {transcoded.name} ({trans_info}) ← {orig_file.name} ({orig_gb:.2f} GB)")
+
+    if args.dry_run:
+        logging.info("[DRY RUN] No files changed.")
+        return
+
+    print()
+    confirm = input(f"Revert {len(pairs)} file(s)? This will delete the transcoded versions. (yes/no): ").strip().lower()
+    if confirm != "yes":
+        logging.info("Cancelled.")
+        return
+
+    reverted, errors = 0, 0
+    for orig_file, transcoded in pairs:
+        dest = orig_file.parent.parent / orig_file.name  # back to the season folder
+
+        # Safety check: don't overwrite something unexpected
+        if dest.exists() and dest != transcoded:
+            logging.error(f"  Skipped {orig_file.name}: {dest.name} already exists and is not the transcoded file")
+            errors += 1
+            continue
+
+        try:
+            if transcoded.exists():
+                transcoded.unlink()
+                logging.info(f"  Deleted transcoded: {transcoded.name}")
+            orig_file.rename(dest)
+            logging.info(f"  Restored: {dest.name}")
+            reverted += 1
+        except Exception as e:
+            logging.error(f"  Error reverting {orig_file.name}: {e}")
+            errors += 1
+
+    # Remove now-empty .originals folders
+    for d in orig_dirs:
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+                logging.info(f"  Removed empty folder: {d}")
+        except Exception:
+            pass
+
+    logging.info(f"Reverted {reverted} file(s), {errors} error(s)")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     cmd_scan(args)
     cmd_encode(args)
@@ -298,8 +371,12 @@ def main() -> None:
     p_enc.add_argument("--clean", action="store_true", help="Delete _ORIG_ files after encoding")
 
     # clean
-    p_cln = sub.add_parser("clean", help="Delete _ORIG_ files from a previous run")
+    p_cln = sub.add_parser("clean", help="Delete originals from .originals/ after verifying encodes are good")
     p_cln.add_argument("--dry-run", action="store_true", help="Show what would be deleted, do not delete")
+
+    # revert
+    p_rev = sub.add_parser("revert", help="Restore originals from .originals/ and delete the transcoded versions")
+    p_rev.add_argument("--dry-run", action="store_true", help="Show what would be changed, do not change anything")
 
     # run (scan + encode)
     p_run = sub.add_parser("run", help="Scan folder then encode in one step")
@@ -312,7 +389,7 @@ def main() -> None:
     args = parser.parse_args()
     args.timestamp = timestamp  # make available to cmd_scan
 
-    dispatch = {"scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "run": cmd_run}
+    dispatch = {"scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "revert": cmd_revert, "run": cmd_run}
     dispatch[args.command](args)
 
 

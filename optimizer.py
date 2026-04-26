@@ -1,10 +1,11 @@
 """
 SettingsOptimizer — translates a VideoScanner record into ffmpeg encoding settings.
 
-Video: AMD hevc_amf, CQP mode.
-  - x264/other → x265 : QP 20/22/24  (transparent quality)
-  - x265 re-encode    : QP 22/24/26  (slightly more aggressive to reclaim space)
-  - 10-bit profile when source is 10-bit or HDR
+Video: AMD av1_amf, CQP mode.
+  - x264/other → AV1 : QP 20/24/28  (transparent quality)
+  - HEVC re-encode    : QP 24/28/32  (slightly more aggressive to reclaim space)
+  - 10-bit via -bitdepth 10 when source is 10-bit or HDR
+  - pre-analysis and adaptive quantization enabled (supported by AV1 AMF unlike HEVC AMF)
 
 Audio (Option B):
   - Passthrough: AC3, EAC3, AAC, MP3, Opus, Vorbis, DTS (lossy core)
@@ -33,9 +34,11 @@ _PASSTHROUGH_CODECS = {"ac3", "eac3", "aac", "mp3", "opus", "vorbis", "dts",
 # MKV cannot store mov_text subtitles — convert to srt
 _MKV_INCOMPATIBLE_SUBS = {"mov_text"}
 
-# QP tuples: (qp_i, qp_p, qp_b)
-_QP_TRANSPARENT = (20, 22, 24)   # for x264/other → x265
-_QP_EFFICIENT   = (22, 24, 26)   # for x265 → x265 re-encode
+# AV1 AMF QP tuples: (qp_i, qp_p, qp_b)
+# AV1 is more efficient than HEVC so these are slightly higher than HEVC equivalents.
+# Start conservative — adjust upward if files are still too large.
+_QP_TRANSPARENT = (20, 24, 28)   # x264/other → AV1 (transparent quality)
+_QP_EFFICIENT   = (24, 28, 32)   # HEVC → AV1 re-encode (reclaim space)
 
 
 class SettingsOptimizer:
@@ -43,7 +46,7 @@ class SettingsOptimizer:
 
     def get_settings(self, file_info: dict) -> dict:
         video_info = file_info["video"]
-        is_x265_reencode = video_info["codec"] in ("hevc", "h265")
+        is_hevc_reencode = video_info["codec"] in ("hevc", "h265")
 
         return {
             "path": file_info["path"],
@@ -51,7 +54,7 @@ class SettingsOptimizer:
             "size_gb": file_info["size_gb"],
             "estimated_saving_gb": file_info["estimated_saving_gb"],
             "resolution_tier": video_info["resolution_tier"],
-            "video": self._video_settings(video_info, is_x265_reencode),
+            "video": self._video_settings(video_info, is_hevc_reencode),
             "audio": self._audio_settings(file_info["audio_tracks"]),
             "subtitles": self._subtitle_settings(file_info["subtitle_tracks"]),
             "container": "mkv",
@@ -59,27 +62,27 @@ class SettingsOptimizer:
 
     # ── video ─────────────────────────────────────────────────────────────────
 
-    def _video_settings(self, video: dict, is_x265_reencode: bool) -> dict:
+    def _video_settings(self, video: dict, is_hevc_reencode: bool) -> dict:
         bit_depth = video.get("bit_depth", 8)
         hdr = video.get("hdr", False)
-
-        # Use 10-bit profile when source is 10-bit or HDR (preserves bit depth)
         use_10bit = bit_depth == 10 or hdr
-        profile = "main10" if use_10bit else "main"
 
-        qp_i, qp_p, qp_b = _QP_EFFICIENT if is_x265_reencode else _QP_TRANSPARENT
+        qp_i, qp_p, qp_b = _QP_EFFICIENT if is_hevc_reencode else _QP_TRANSPARENT
 
         out = {
-            "encoder": "hevc_amf",
-            "profile": profile,
-            "quality_preset": "quality",   # AMD quality/balanced/speed
+            "encoder": "av1_amf",
+            "usage": "high_quality",      # AMD high quality transcoding mode
+            "quality_preset": "quality",  # AMD quality/balanced/speed
             "rc": "cqp",
             "qp_i": qp_i,
             "qp_p": qp_p,
             "qp_b": qp_b,
+            "bitdepth": 10 if use_10bit else 8,
+            "preanalysis": True,          # works with AV1 AMF (unlike HEVC CQP)
+            "aq_mode": "caq",             # context adaptive quantization — helps dark scenes
         }
 
-        # Pass through HDR colour metadata so the output is still HDR-tagged
+        # Pass through HDR colour metadata
         if hdr:
             out["hdr_metadata"] = {
                 "color_primaries": video.get("color_primaries") or "bt2020",
@@ -118,7 +121,6 @@ class SettingsOptimizer:
                     "reason": f"passthrough {codec}",
                 })
             else:
-                # Unknown codec — copy and let ffmpeg warn if incompatible
                 logger.warning(f"  Unknown audio codec '{codec}' (lang={track['lang']}) — will copy")
                 result.append({
                     "stream_index": track["stream_index"],

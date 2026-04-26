@@ -1,49 +1,55 @@
 ---
 name: Encoder settings
-description: AMD AMF QP values, ffmpeg flags, and transcode decision thresholds
+description: AMD AMF AV1 QP values, ffmpeg flags, and transcode decision thresholds
 type: project
-originSessionId: b401d7e5-676a-45cf-ad0d-e0b86509630f
 ---
-## AMD hevc_amf settings (ffmpeg)
+
+## Encoder: av1_amf (AMD AV1 hardware, RX 7900 XT / RDNA 3)
+
+Switched from hevc_amf to av1_amf. HEVC caused visible blocking in dark scenes;
+AV1 with -aq_mode caq fixes this. Speed: ~120fps (vs ~400fps for HEVC) — acceptable trade-off.
 
 ```
--c:v hevc_amf -quality quality -rc cqp
--preanalysis 1 -vbaq 1
+-c:v av1_amf -usage high_quality -quality quality -rc cqp
+-preanalysis 1 -aq_mode caq
 ```
+
+**Note:** `-preanalysis` and `-vbaq` do NOT work with hevc_amf in CQP mode (encoder init fails).
+Both work correctly with av1_amf.
 
 ### QP values
 
 | Scenario | qp_i | qp_p | qp_b | Rationale |
 |---|---|---|---|---|
-| x264/other → x265 | 20 | 22 | 24 | Transparent quality |
-| x265 → x265 re-encode | 22 | 24 | 26 | Reclaim space from bloated x265 |
+| x264/other → AV1 | 20 | 24 | 28 | Transparent quality, confirmed working |
+| HEVC → AV1 re-encode | 24 | 28 | 32 | Reclaim space, still good quality |
 
-### Profile
-- `main` (8-bit) when source is 8-bit SDR
-- `main10` when source is 10-bit or HDR
+**How to apply:** adjust `_QP_TRANSPARENT` / `_QP_EFFICIENT` tuples in `optimizer.py`.
+Bump up by 4 if files are too large; drop by 4 if artifacts appear.
+
+### 10-bit / HDR
+- AV1 AMF uses `-bitdepth 10` (not `-profile:v main10` like HEVC AMF)
+- AV1 Main profile handles both 8-bit and 10-bit natively
 
 ## Transcode decision thresholds
 
-x265 files are only re-encoded if they exceed EITHER the size OR bitrate limit for their tier.
-Non-x265 files are always transcoded.
+HEVC and AV1 files are skipped unless they exceed EITHER limit for their tier.
+All other codecs (x264, xvid, etc.) are always transcoded.
 
 | Tier | Size limit | Bitrate limit |
 |---|---|---|
-| 4K (≥2160p) | 10 GB | 40 Mbps |
-| 1080p | 8 GB | 15 Mbps |
-| 720p | 4 GB | 8 Mbps |
-| SD (<720p) | 2 GB | 4 Mbps |
+| 4K (≥2160p) | 10 GB | 12 Mbps |
+| 1080p | 6 GB | 3,500 kbps |
+| 720p | 3 GB | 2,000 kbps |
+| SD (<720p) | 1.5 GB | 1,200 kbps |
+
+**How to apply:** adjust `_SIZE_LIMIT_GB` / `_BITRATE_LIMIT_KBPS` dicts in `scanner.py`.
 
 ## Size guard
 
-If encoded output > 110% of input size → discard output, keep original.
-Handles cases where source is already very well compressed (common with SD content).
+If encoded output > 110% of input size → discard temp, keep original untouched.
 
-## Estimated savings (for scan report)
+## Estimated savings (scan report heuristics only)
 
-- x264/other → x265: ~45% of input size
-- x265 → x265 re-encode: ~25% of input size
-
-These are rough heuristics for planning purposes only.
-
-**How to apply:** if tuning quality, adjust QP_TRANSPARENT / QP_EFFICIENT tuples in optimizer.py. If tuning thresholds, adjust _SIZE_LIMIT_GB / _BITRATE_LIMIT_KBPS dicts in scanner.py.
+- x264/other → AV1: ~45% of input size
+- HEVC → AV1 re-encode: ~25% of input size
