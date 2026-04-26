@@ -16,6 +16,8 @@ import threading
 import time
 from pathlib import Path
 
+import encoders
+
 logger = logging.getLogger(__name__)
 
 FFMPEG = "ffmpeg"
@@ -165,26 +167,11 @@ class Transcoder:
 
         cmd += ["-vf", ",".join(filters)]
 
-        # ── video ────────────────────────────────────────────────────────────
-        cmd += [
-            "-c:v",      vs["encoder"],
-            "-usage",    vs["usage"],
-            "-quality",  vs["quality_preset"],
-            "-rc",                   vs["rc"],
-            "-qvbr_quality_level",   str(vs["qvbr_quality_level"]),
-            "-bitdepth", str(vs["bitdepth"]),
-            "-preanalysis", "1" if vs.get("preanalysis") else "0",
-            "-aq_mode",  vs.get("aq_mode", "none"),
-        ]
-
-        # Cap at source bitrate — prevents output growing larger than input when
-        # the source is already compact. QVBR still drives quality freely below this cap.
-        if vs.get("maxrate_kbps", 0) > 0:
-            bufsize = vs["maxrate_kbps"] * 2
-            cmd += ["-maxrate", f"{vs['maxrate_kbps']}k", "-bufsize", f"{bufsize}k"]
+        # ── video encoder flags (encoder-specific, from encoders.py) ─────────
+        cmd += encoders.build_video_flags(vs["encoder_profile"], vs)
 
         # Colour metadata — always set so the encoder tags the output correctly.
-        # Without this, AV1 AMF defaults to unspecified and players render colours wrong.
+        # Without this the encoder defaults to unspecified and players render colours wrong.
         cmd += [
             "-color_primaries", vs["color_primaries"],
             "-color_trc",       vs["color_trc"],
@@ -223,7 +210,7 @@ class Transcoder:
         vs = settings["video"]
         logger.info(f"  File   : {src.name}  ({settings['size_gb']:.2f} GB)")
         maxrate_str = f"  maxrate={vs['maxrate_kbps']}k" if vs.get("maxrate_kbps", 0) > 0 else ""
-        logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QVBR {vs['qvbr_quality_level']}  rc={vs['rc']}{maxrate_str}")
+        logger.info(f"  Video  : {vs['codec']} {vs['bitdepth']}bit  {vs['quality_label']}{maxrate_str}")
         if settings.get("crop"):
             logger.info(f"  Crop   : {settings['crop']} (black bars removed)")
         for t in settings["audio"]:

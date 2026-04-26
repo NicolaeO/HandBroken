@@ -30,6 +30,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import config as cfg
 from scanner import VideoScanner
 from optimizer import SettingsOptimizer
 from transcoder import Transcoder
@@ -212,8 +213,9 @@ def cmd_encode(args: argparse.Namespace, _setup_log: bool = True) -> None:
         logging.info("Nothing to transcode.")
         return
 
-    optimizer = SettingsOptimizer()
-    transcoder = Transcoder()
+    conf = cfg.load()
+    optimizer = SettingsOptimizer(encoder=conf["encoder"])
+    transcoder = Transcoder(ffmpeg_path=conf["ffmpeg_path"])
 
     total = len(to_transcode)
     total_est_saving = sum(r["estimated_saving_gb"] for r in to_transcode)
