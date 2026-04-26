@@ -138,7 +138,13 @@ class Transcoder:
         cmd += ["-map", "0:s?"]                     # all subtitle streams
         cmd += ["-map", "0:t?"]                     # attachments (e.g. MKV fonts)
 
-        # ── colour metadata filter ────────────────────────────────────────────
+        # ── video filter chain ────────────────────────────────────────────────
+        filters = []
+
+        # Crop black bars if detected during scan (W:H:X:Y)
+        if settings.get("crop"):
+            filters.append(f"crop={settings['crop']}")
+
         # setparams marks decoded frames with explicit colour info before encoding.
         # This writes colour data into the AV1 bitstream (sequence header OBU),
         # not just the container — hardware decoders (AMD, Intel) read the bitstream,
@@ -155,7 +161,9 @@ class Transcoder:
         if vs.get("color_range"):
             range_filter = "limited" if vs["color_range"] == "tv" else vs["color_range"]
             setparams += f":range={range_filter}"
-        cmd += ["-vf", setparams]
+        filters.append(setparams)
+
+        cmd += ["-vf", ",".join(filters)]
 
         # ── video ────────────────────────────────────────────────────────────
         cmd += [
@@ -216,6 +224,8 @@ class Transcoder:
         logger.info(f"  File   : {src.name}  ({settings['size_gb']:.2f} GB)")
         maxrate_str = f"  maxrate={vs['maxrate_kbps']}k" if vs.get("maxrate_kbps", 0) > 0 else ""
         logger.info(f"  Video  : {vs['encoder']} {vs['bitdepth']}bit  QVBR {vs['qvbr_quality_level']}  rc={vs['rc']}{maxrate_str}")
+        if settings.get("crop"):
+            logger.info(f"  Crop   : {settings['crop']} (black bars removed)")
         for t in settings["audio"]:
             logger.info(f"  Audio [{t['lang']}]: {t['reason']}")
         for t in settings["subtitles"]:

@@ -57,6 +57,7 @@ class SettingsOptimizer:
             "estimated_saving_gb": file_info["estimated_saving_gb"],
             "resolution_tier": video_info["resolution_tier"],
             "video": self._video_settings(video_info, is_hevc_reencode),
+            "crop": file_info.get("crop"),   # "W:H:X:Y" or None
             "audio": self._audio_settings(file_info["audio_tracks"]),
             "subtitles": self._subtitle_settings(file_info["subtitle_tracks"]),
             "container": "mkv",

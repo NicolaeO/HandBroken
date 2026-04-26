@@ -73,18 +73,28 @@ def _scan_json_name(folder: Path, timestamp: str) -> Path:
 
 # ── logging ───────────────────────────────────────────────────────────────────
 
-def _setup_logging(timestamp: str) -> None:
+_LOG_FMT = "%(asctime)s %(levelname)-8s %(message)s"
+
+
+def _init_logging() -> None:
+    """Stdout-only logging used until we know the action + folder name."""
+    logging.basicConfig(level=logging.INFO, format=_LOG_FMT,
+                        handlers=[logging.StreamHandler(sys.stdout)])
+
+
+def _add_file_logging(action: str, folder_name: str, timestamp: str) -> None:
+    """Add a file handler once we know the action and folder.
+
+    Log name: {action}_{folder}_{YYYY-MM-DD_HH-MM-SS}.log
+    """
     LOGS_DIR.mkdir(exist_ok=True)
-    log_file = LOGS_DIR / f"{timestamp}.log"
-    fmt = "%(asctime)s %(levelname)-8s %(message)s"
-    logging.basicConfig(
-        level=logging.INFO,
-        format=fmt,
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
+    safe = re.sub(r"[^\w\-]", "_", folder_name).strip("_") or "unknown"
+    date = timestamp[:10]           # YYYY-MM-DD
+    time_part = timestamp[11:]      # HH-MM-SS
+    log_file = LOGS_DIR / f"{action}_{safe}_{date}_{time_part}.log"
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(_LOG_FMT))
+    logging.getLogger().addHandler(handler)
     logging.info(f"Log: {log_file}")
 
 
@@ -175,7 +185,9 @@ def _clean_orig_files(scan_records: list[dict], dry_run: bool = False) -> None:
 
 # ── commands ──────────────────────────────────────────────────────────────────
 
-def cmd_scan(args: argparse.Namespace) -> None:
+def cmd_scan(args: argparse.Namespace, _setup_log: bool = True) -> None:
+    if _setup_log:
+        _add_file_logging("scan", args.folder.resolve().name, args.timestamp)
     RESULTS_DIR.mkdir(exist_ok=True)
     out = args.out or _scan_json_name(args.folder, args.timestamp)
     scanner = VideoScanner()
@@ -184,12 +196,14 @@ def cmd_scan(args: argparse.Namespace) -> None:
     logging.info(f"Results: {out}")
 
 
-def cmd_encode(args: argparse.Namespace) -> None:
+def cmd_encode(args: argparse.Namespace, _setup_log: bool = True) -> None:
     scan_path = _pick_scan_json()
     if scan_path is None:
         logging.error("No scan JSON file selected.")
         return
 
+    if _setup_log:
+        _add_file_logging("encode", scan_path.stem, args.timestamp)
     logging.info(f"Loading: {scan_path.name}")
     all_records = VideoScanner.load_json(scan_path)
     to_transcode = [r for r in all_records if r["action"] == "transcode"]
@@ -267,6 +281,7 @@ def cmd_clean(args: argparse.Namespace) -> None:
     if scan_path is None:
         return
 
+    _add_file_logging("clean", scan_path.stem, args.timestamp)
     logging.info(f"Loading: {scan_path.name}")
     all_records = VideoScanner.load_json(scan_path)
     _clean_orig_files(all_records, dry_run=args.dry_run)
@@ -277,6 +292,7 @@ def cmd_revert(args: argparse.Namespace) -> None:
     if scan_path is None:
         return
 
+    _add_file_logging("revert", scan_path.stem, args.timestamp)
     logging.info(f"Loading: {scan_path.name}")
     all_records = VideoScanner.load_json(scan_path)
     orig_dirs = _find_orig_folders(all_records)
@@ -346,15 +362,16 @@ def cmd_revert(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    cmd_scan(args)
-    cmd_encode(args)
+    _add_file_logging("run", args.folder.resolve().name, args.timestamp)
+    cmd_scan(args, _setup_log=False)
+    cmd_encode(args, _setup_log=False)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    _setup_logging(timestamp)
+    _init_logging()
 
     parser = argparse.ArgumentParser(
         description="Batch HEVC transcoder using ffmpeg + AMD AMF",
@@ -394,7 +411,7 @@ def main() -> None:
                        help="Keep encoded file even if it is larger than the source")
 
     args = parser.parse_args()
-    args.timestamp = timestamp  # make available to cmd_scan
+    args.timestamp = timestamp  # made available to all commands for log naming
 
     dispatch = {"scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "revert": cmd_revert, "run": cmd_run}
     dispatch[args.command](args)

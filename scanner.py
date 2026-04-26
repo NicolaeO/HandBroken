@@ -7,12 +7,15 @@ and a recommended action (transcode / skip).
 
 import json
 import logging
+import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 FFPROBE = "ffprobe"
+FFMPEG  = "ffmpeg"
 
 VIDEO_EXTENSIONS = {
     '.mkv', '.mp4', '.avi', '.m4v', '.mov', '.webm', '.flv', '.ts', '.vob', '.ogv', '.ogg', '.rrc', '.gifv',
@@ -115,8 +118,9 @@ def _estimate_saving(size_gb: float, codec: str, action: str) -> float:
 class VideoScanner:
     """Scan a folder and produce a list of per-file metadata dicts."""
 
-    def __init__(self, ffprobe_path: str = FFPROBE):
+    def __init__(self, ffprobe_path: str = FFPROBE, ffmpeg_path: str = FFMPEG):
         self.ffprobe_path = ffprobe_path
+        self.ffmpeg_path  = ffmpeg_path
         self.results: list[dict] = []
 
     # ── public ──────────────────────────────────────────────────────────────
@@ -191,8 +195,15 @@ class VideoScanner:
         tier = video["resolution_tier"]
         reason = self._action_reason(video, size_gb, action)
 
+        # Detect black bars — only for files we'll transcode (saves time on skips)
+        crop = None
+        if action == "transcode":
+            duration_sec = float(fmt.get("duration", 0))
+            crop = self._detect_crop(path, duration_sec, video["width"], video["height"])
+
         logger.info(f"    {video['codec'].upper()} {video['width']}x{video['height']} "
-                    f"{video['bitrate_kbps']} kbps  {size_gb:.2f} GB  → {action.upper()} ({reason})")
+                    f"{video['bitrate_kbps']} kbps  {size_gb:.2f} GB  → {action.upper()} ({reason})"
+                    + (f"  crop={crop}" if crop else ""))
 
         return {
             "path": str(path),
@@ -202,9 +213,46 @@ class VideoScanner:
             "action_reason": reason,
             "estimated_saving_gb": saving,
             "video": video,
+            "crop": crop,                  # "W:H:X:Y" or None
             "audio_tracks": [_parse_audio(s, i) for i, s in enumerate(audio_streams)],
             "subtitle_tracks": [_parse_subtitle(s, i) for i, s in enumerate(subtitle_streams)],
         }
+
+    def _detect_crop(self, path: Path, duration_sec: float,
+                     src_w: int, src_h: int) -> str | None:
+        """
+        Run cropdetect on a 2-minute sample starting at 25% into the file.
+        Returns 'W:H:X:Y' if black bars are found, None otherwise.
+        """
+        if duration_sec < 10:
+            return None
+
+        start   = int(duration_sec * 0.25)
+        sample  = min(120, int(duration_sec * 0.5))
+
+        cmd = [
+            self.ffmpeg_path,
+            "-ss", str(start), "-i", str(path),
+            "-t", str(sample),
+            "-vf", "cropdetect=limit=24:round=2:skip=2:reset=0",
+            "-f", "null", "-",
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            # cropdetect writes to stderr; extract all crop=W:H:X:Y values
+            crops = re.findall(r"crop=(\d+:\d+:\d+:\d+)", r.stderr)
+            if not crops:
+                return None
+            # Take the most common stable crop value
+            best, _ = Counter(crops).most_common(1)[0]
+            w, h, x, y = (int(v) for v in best.split(":"))
+            # Only report if it actually removes something
+            if w == src_w and h == src_h:
+                return None
+            return best
+        except Exception as e:
+            logger.debug(f"    cropdetect failed: {e}")
+            return None
 
     def _decide_action(self, video: dict, size_gb: float) -> str:
         codec = video["codec"]
