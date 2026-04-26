@@ -19,6 +19,8 @@ PROFILES: dict[str, dict] = {
         "quality_efficient":    33,
         "quality_label":        "QVBR",
         "requirements":         "AMD Adrenalin drivers 23.x+ · ffmpeg full build (gyan.dev)",
+        # Preview levels — cover efficient → transparent + headroom above
+        "preview_qualities":    [30, 35, 40, 45, 50],
     },
     "nvidia": {
         "name":                 "NVIDIA NVENC AV1 (av1_nvenc)",
@@ -27,6 +29,7 @@ PROFILES: dict[str, dict] = {
         "quality_efficient":    33,
         "quality_label":        "CQ",
         "requirements":         "NVIDIA drivers 522+ · RTX 3000+ GPU for AV1 encoding",
+        "preview_qualities":    [20, 24, 26, 30, 33],
     },
     "cpu": {
         "name":                 "CPU Software AV1 (libsvtav1)",
@@ -35,6 +38,7 @@ PROFILES: dict[str, dict] = {
         "quality_efficient":    38,
         "quality_label":        "CRF",
         "requirements":         "ffmpeg full build with libsvtav1 (gyan.dev includes it)",
+        "preview_qualities":    [24, 28, 30, 34, 38],
     },
 }
 

@@ -1,13 +1,15 @@
 PYTHON ?= python
 FOLDER ?= .
 
-.PHONY: help check scan encode run clean revert
+.PHONY: help check preview scan encode run clean revert
 
 help:
 	@echo "HandBroken -- batch AV1 transcoder"
 	@echo ""
 	@echo "Setup"
 	@echo "  make check                   Verify ffmpeg, ffprobe, and encoder are ready"
+	@echo "  make preview FILE=<path>     Generate quality calibration clips"
+	@echo "       preview FILE=<path> START=120 DURATION=15"
 	@echo ""
 	@echo "Encoding"
 	@echo "  make scan   FOLDER=<path>    Scan a folder, write scan JSON to results/"
@@ -28,6 +30,9 @@ help:
 
 check:
 	$(PYTHON) check_env.py
+
+preview:
+	$(PYTHON) run.py preview "$(FILE)" $(if $(START),--start $(START),) $(if $(DURATION),--duration $(DURATION),)
 
 scan:
 	$(PYTHON) run.py scan "$(FOLDER)"

@@ -105,6 +105,46 @@ make clean
 make revert
 ```
 
+## Quality calibration (preview)
+
+Before encoding your library, run a preview to find the quality level that looks right to you:
+
+```bash
+# Auto-picks a start point 30% into the file
+python run.py preview "K:/Media/Movie.mkv"
+
+# Or specify a start time and clip length
+python run.py preview "K:/Media/Movie.mkv" --start 120 --duration 15
+
+# Makefile shortcut
+make preview FILE="K:/Media/Movie.mkv"
+make preview FILE="K:/Media/Movie.mkv" START=120 DURATION=15
+```
+
+This encodes a short clip at every quality level in the encoder's `preview_qualities` range, plus a stream-copied reference (no re-encode). Output goes to `.preview/<filename>/`:
+
+```
+.preview/Movie/
+  00_source.mkv          ← original, untouched
+  01_amd_qvbr30.mkv
+  02_amd_qvbr35.mkv
+  03_amd_qvbr40.mkv      ← efficient default
+  04_amd_qvbr45.mkv      ← transparent default
+  05_amd_qvbr50.mkv
+```
+
+> **Note:** `.preview` is a hidden folder (the leading dot hides it by default).
+> - **Windows** — Explorer → View → Show → Hidden items
+> - **macOS** — Finder → Cmd+Shift+. to toggle hidden files
+> - **Linux** — `ls -a` or your file manager's "show hidden" option
+
+Open the clips side-by-side in MPV or another player. Once you've picked your preferred level, update `encoders.py`:
+
+```python
+"quality_transparent": 45,   # for normal sources (H.264, MPEG-2, etc.)
+"quality_efficient":    33,   # for HEVC sources that are already small
+```
+
 ## How it works
 
 ```

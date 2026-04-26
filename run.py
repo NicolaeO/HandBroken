@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config as cfg
+import preview as prev
 from scanner import VideoScanner
 from optimizer import SettingsOptimizer
 from transcoder import Transcoder
@@ -363,6 +364,10 @@ def cmd_revert(args: argparse.Namespace) -> None:
     logging.info(f"Reverted {reverted} file(s), {errors} error(s)")
 
 
+def cmd_preview(args: argparse.Namespace) -> None:
+    prev.run_preview(str(args.file), args.start, args.duration)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     _add_file_logging("run", args.folder.resolve().name, args.timestamp)
     cmd_scan(args, _setup_log=False)
@@ -380,6 +385,14 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    # preview
+    p_pre = sub.add_parser("preview", help="Generate quality calibration clips for your encoder")
+    p_pre.add_argument("file", type=Path, help="Source video file to sample from")
+    p_pre.add_argument("--start", type=int, default=None,
+                       help="Start time in seconds (default: 30%% into the file)")
+    p_pre.add_argument("--duration", type=int, default=prev.DEFAULT_DURATION,
+                       help=f"Clip length in seconds (default: {prev.DEFAULT_DURATION})")
 
     # scan
     p_scan = sub.add_parser("scan", help="Probe folder and write scan JSON")
@@ -415,7 +428,7 @@ def main() -> None:
     args = parser.parse_args()
     args.timestamp = timestamp  # made available to all commands for log naming
 
-    dispatch = {"scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "revert": cmd_revert, "run": cmd_run}
+    dispatch = {"preview": cmd_preview, "scan": cmd_scan, "encode": cmd_encode, "clean": cmd_clean, "revert": cmd_revert, "run": cmd_run}
     dispatch[args.command](args)
 
 
