@@ -137,7 +137,9 @@ class Transcoder:
         cmd += ["-map", "0:v:0"]                    # first video stream only
         for t in audio_tracks:
             cmd += ["-map", f"0:a:{t['stream_index']}"]
-        cmd += ["-map", "0:s?"]                     # all subtitle streams
+        for t in subtitle_tracks:                    # map only non-dropped subtitle streams
+            if t["codec"] != "drop":
+                cmd += ["-map", f"0:s:{t['stream_index']}"]
         cmd += ["-map", "0:t?"]                     # attachments (e.g. MKV fonts)
 
         # ── video filter chain ────────────────────────────────────────────────
@@ -190,9 +192,11 @@ class Transcoder:
                 ]
 
         # ── subtitles ────────────────────────────────────────────────────────
+        # Only non-dropped streams were mapped above, so enumerate those only.
+        kept_subs = [t for t in subtitle_tracks if t["codec"] != "drop"]
         cmd += ["-c:s", "copy"]   # default: copy everything
-        for out_idx, t in enumerate(subtitle_tracks):
-            if t["codec"] != "copy":
+        for out_idx, t in enumerate(kept_subs):
+            if t["codec"] not in ("copy", "drop"):
                 cmd += [f"-c:s:{out_idx}", t["codec"]]
 
         # ── output ───────────────────────────────────────────────────────────
@@ -218,6 +222,7 @@ class Transcoder:
         for t in settings["subtitles"]:
             if t["codec"] != "copy":
                 logger.info(f"  Sub   [{t['lang']}]: {t['reason']}")
+
 
     def _watch_size(self, proc: subprocess.Popen, temp: Path,
                     in_bytes: int, aborted: threading.Event) -> None:

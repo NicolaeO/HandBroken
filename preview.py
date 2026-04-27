@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 def _probe_duration(src: Path, ffprobe: str) -> float:
     cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", str(src)]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=30)
         return float(json.loads(r.stdout)["format"].get("duration", 0))
     except Exception:
         return 0.0

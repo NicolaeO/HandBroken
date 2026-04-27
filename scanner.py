@@ -20,7 +20,7 @@ FFMPEG  = "ffmpeg"
 VIDEO_EXTENSIONS = {
     '.mkv', '.mp4', '.avi', '.m4v', '.mov', '.webm', '.flv', '.ts', '.vob', '.ogv', '.ogg', '.rrc', '.gifv',
     '.mng', '.qt', '.wmv', '.yuv', '.rm', '.asf', '.amv', '.m4p', '.mpg', '.mp2', '.mpeg', '.mpe', '.mpv',
-    '.svi', '.3gp', '.3g2', '.mxf', '.roq', '.nsv', '.f4v', '.f4p', '.f4a', '.f4b', '.mod'
+    '.svi', '.3gp', '.3g2', '.mxf', '.roq', '.nsv', '.f4v', '.f4p', '.f4a', '.f4b', '.mod', '.m2ts'
 }
 
 
@@ -238,7 +238,7 @@ class VideoScanner:
             "-f", "null", "-",
         ]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=60)
             # cropdetect writes to stderr; extract all crop=W:H:X:Y values
             crops = re.findall(r"crop=(\d+:\d+:\d+:\d+)", r.stderr)
             if not crops:
@@ -289,7 +289,7 @@ class VideoScanner:
             str(path),
         ]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=60)
             if r.returncode != 0:
                 logger.error(f"    ffprobe error: {r.stderr.strip()}")
                 return None

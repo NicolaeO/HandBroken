@@ -26,6 +26,8 @@ _DTS_LOSSLESS_PROFILES = {"dts-hd ma", "dts-hd hra"}
 _PASSTHROUGH_CODECS = {"ac3", "eac3", "aac", "mp3", "opus", "vorbis", "dts",
                        "ac4", "mp2", "wmav2"}
 _MKV_INCOMPATIBLE_SUBS = {"mov_text"}
+# Broadcast-only formats that cannot be usefully muxed into MKV — drop them.
+_DROP_SUBS = {"dvb_teletext", "teletext", "eia_608"}
 
 
 class SettingsOptimizer:
@@ -145,15 +147,19 @@ class SettingsOptimizer:
         result = []
         for track in tracks:
             codec  = track["codec"].lower()
-            target = "srt" if codec in _MKV_INCOMPATIBLE_SUBS else "copy"
+            if codec in _DROP_SUBS:
+                target = "drop"
+                reason = f"drop {codec} (not compatible with MKV)"
+            elif codec in _MKV_INCOMPATIBLE_SUBS:
+                target = "srt"
+                reason = f"convert {codec} → srt (MKV compat)"
+            else:
+                target = "copy"
+                reason = f"passthrough {codec}"
             result.append({
                 "stream_index": track["stream_index"],
                 "lang":         track["lang"],
                 "codec":        target,
-                "reason":       (
-                    f"convert {codec} → srt (MKV compat)"
-                    if target == "srt"
-                    else f"passthrough {codec}"
-                ),
+                "reason":       reason,
             })
         return result
