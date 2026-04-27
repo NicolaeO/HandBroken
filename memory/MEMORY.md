@@ -1,0 +1,3 @@
+- [Project overview](project_overview.md) — batch HEVC transcoder, ffmpeg+AMD AMF, file layout, how to run
+- [User preferences](user_preferences.md) — quality/audio/subtitle choices and reasoning
+- [Encoder settings](encoder_settings.md) — QP values, AMD AMF flags, transcode decision thresholds

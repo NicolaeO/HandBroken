@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ffprobe -version)",
+      "Bash(ffmpeg -version)",
+      "Bash(ffmpeg -hide_banner -encoders)",
+      "Bash(ffmpeg -ss 600 -i \"K:/Media/TV Series/Ozark/Season 1/Ozark - S01E01 - S01E01 S01E01.mp4\" -t 10 -vf \"setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited\" -c:v av1_amf -usage high_quality -quality quality -rc qvbr -qvbr_quality_level 51 -bitdepth 8 -preanalysis 1 -aq_mode caq -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -an -y \"D:/filme/handbrake_tc/test_q51.mkv\")",
+      "Bash(ffmpeg -ss 600 -i \"K:/Media/TV Series/Ozark/Season 1/Ozark - S01E01 - S01E01 S01E01.mp4\" -t 10 -vf \"setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited\" -c:v av1_amf -usage high_quality -quality quality -rc hqvbr -qvbr_quality_level 40 -bitdepth 8 -preanalysis 1 -aq_mode caq -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -an -y \"D:/filme/handbrake_tc/test_hqvbr40.mkv\")",
+      "Bash(wait)",
+      "Bash(ffmpeg -ss 5 -i \"D:/filme/handbrake_tc/test_q51.mkv\" -frames:v 1 -y \"D:/filme/handbrake_tc/frame_q51.png\")",
+      "Bash(ffmpeg -ss 5 -i \"D:/filme/handbrake_tc/test_hqvbr40.mkv\" -frames:v 1 -y \"D:/filme/handbrake_tc/frame_hqvbr40.png\")",
+      "Bash(ffmpeg -i \"D:/filme/handbrake_tc/test_norange.mkv\" -frames:v 1 -y \"D:/filme/handbrake_tc/frame_norange.png\")"
+    ]
+  }
+}
