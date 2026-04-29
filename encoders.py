@@ -15,7 +15,7 @@ PROFILES: dict[str, dict] = {
     "amd": {
         "name":                 "AMD AMF AV1 (av1_amf)",
         "codec":                "av1_amf",
-        "quality_transparent":  45,    # QVBR — higher = better
+        "quality_transparent":  40,    # QVBR — higher = better
         "quality_efficient":    33,
         "quality_label":        "QVBR",
         "requirements":         "AMD Adrenalin drivers 23.x+ · ffmpeg full build (gyan.dev)",

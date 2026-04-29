@@ -11,6 +11,7 @@ SD content), the temp file is deleted and the original is left untouched.
 """
 
 import logging
+import shutil
 import subprocess
 import threading
 import time
@@ -20,7 +21,8 @@ import encoders
 
 logger = logging.getLogger(__name__)
 
-FFMPEG = "ffmpeg"
+FFMPEG       = "ffmpeg"
+MKVPROPEDIT  = "mkvpropedit"
 
 # If output exceeds input by this factor, abort replacement (keep original)
 _MAX_SIZE_RATIO = 1.10
@@ -33,8 +35,9 @@ _SANITY_MAX_RATIO       = 2.0    # abort if temp is already 2x the source size
 
 
 class Transcoder:
-    def __init__(self, ffmpeg_path: str = FFMPEG):
-        self.ffmpeg_path = ffmpeg_path
+    def __init__(self, ffmpeg_path: str = FFMPEG, mkvpropedit_path: str = MKVPROPEDIT):
+        self.ffmpeg_path       = ffmpeg_path
+        self.mkvpropedit_path  = mkvpropedit_path
 
     # ── public ────────────────────────────────────────────────────────────────
 
@@ -121,6 +124,11 @@ class Transcoder:
             logger.error(f"  Error replacing file: {e}")
             self._cleanup(temp_out)
             return False
+
+        try:
+            self._clean_metadata(final)
+        except Exception as e:
+            logger.error(f"  Error cleaning metadata: {e}")
 
         return True
 
@@ -257,3 +265,33 @@ class Transcoder:
                 logger.info(f"  Removed temp: {path.name}")
             except Exception as e:
                 logger.error(f"  Could not remove temp {path.name}: {e}")
+
+    
+    def _clean_metadata(self, file_path: Path) -> bool:
+        """Strip title and global tags from the finished MKV using mkvpropedit.
+
+        Returns True on success, False if mkvpropedit is unavailable or fails.
+        Non-fatal — the encode is already complete before this runs.
+        """
+        if not shutil.which(self.mkvpropedit_path):
+            logger.warning(
+                f"  mkvpropedit not found ('{self.mkvpropedit_path}') — skipping metadata cleanup. "
+                f"Install MKVToolNix: https://mkvtoolnix.download/"
+            )
+            return False
+
+        cmd = [
+            self.mkvpropedit_path, str(file_path),
+            "--edit", "info",
+            "--set", "title=",
+            "--tags", "all:",
+        ]
+        logger.info(f"  Cleaning metadata: {file_path.name}")
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+
+        if result.returncode == 0:
+            logger.info("  Metadata cleaned OK")
+            return True
+
+        logger.error(f"  mkvpropedit failed (exit {result.returncode}): {result.stderr.strip()[-300:]}")
+        return False

@@ -82,6 +82,25 @@ class SettingsOptimizer:
             trc        = video.get("color_transfer")  or "bt709"
             colorspace = video.get("color_space")     or "bt709"
 
+            # Hardware encoders (av1_amf in particular) run color option strings
+            # through an expression evaluator that rejects legacy identifiers like
+            # "bt470bg". For SDR re-encodes, normalize to modern equivalents.
+            # Note: colorspace (YCbCr matrix) is intentionally left as-is — BT.601
+            # (bt470bg / smpte170m) differs from bt709 and must be preserved correctly.
+            _TRC_NORM = {
+                "bt470m":    "bt709",   # NTSC film, gamma ≈ 2.2
+                "bt470bg":   "bt709",   # PAL/SECAM, gamma 2.8
+                "gamma22":   "bt709",
+                "gamma28":   "bt709",
+                "smpte170m": "bt709",   # SMPTE 170M — same gamma as bt709
+            }
+            _PRIMARIES_NORM = {
+                "bt470m":  "bt709",
+                "bt470bg": "bt709",
+            }
+            trc       = _TRC_NORM.get(trc, trc)
+            primaries = _PRIMARIES_NORM.get(primaries, primaries)
+
         # Only set color_range when the source declares it (or HDR which is always limited).
         # Forcing "tv" on an untagged source triggers a range conversion that crushes blacks.
         color_range = "tv" if hdr else (video.get("color_range") or None)

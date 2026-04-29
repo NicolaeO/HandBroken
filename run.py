@@ -216,7 +216,8 @@ def cmd_encode(args: argparse.Namespace, _setup_log: bool = True) -> None:
 
     conf = cfg.load()
     optimizer = SettingsOptimizer(encoder=conf["encoder"])
-    transcoder = Transcoder(ffmpeg_path=conf["ffmpeg_path"])
+    transcoder = Transcoder(ffmpeg_path=conf["ffmpeg_path"],
+                            mkvpropedit_path=conf.get("mkvpropedit_path", "mkvpropedit"))
 
     total = len(to_transcode)
     total_est_saving = sum(r["estimated_saving_gb"] for r in to_transcode)

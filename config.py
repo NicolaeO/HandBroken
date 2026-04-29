@@ -6,9 +6,10 @@ from pathlib import Path
 _CONFIG_PATH = Path(__file__).parent / "config.json"
 
 _DEFAULTS: dict = {
-    "encoder":      "amd",   # amd | nvidia | cpu
-    "ffmpeg_path":  "ffmpeg",
-    "ffprobe_path": "ffprobe",
+    "encoder":           "amd",          # amd | nvidia | cpu
+    "ffmpeg_path":       "ffmpeg",
+    "ffprobe_path":      "ffprobe",
+    "mkvpropedit_path":  "mkvpropedit",  # optional — part of MKVToolNix
 }
 
 

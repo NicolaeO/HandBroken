@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 FFPROBE = "ffprobe"
 FFMPEG  = "ffmpeg"
 
+
 VIDEO_EXTENSIONS = {
     '.mkv', '.mp4', '.avi', '.m4v', '.mov', '.webm', '.flv', '.ts', '.vob', '.ogv', '.ogg', '.rrc', '.gifv',
     '.mng', '.qt', '.wmv', '.yuv', '.rm', '.asf', '.amv', '.m4p', '.mpg', '.mp2', '.mpeg', '.mpe', '.mpv',
@@ -311,3 +312,4 @@ class VideoScanner:
         logger.info(f"To skip     : {len(self.results) - len(to_transcode)}")
         logger.info(f"Est. savings: ~{total_saving:.1f} GB")
         logger.info("─" * 60)
+
